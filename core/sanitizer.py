@@ -16,5 +16,5 @@ def sanitize(text: str, cfg: SanitizationConfig) -> str:
     if cfg.collapse_spaces:
         text = re.sub(r" {2,}", " ", text)
     if cfg.strip_dots_spaces:
-        text = text.strip().rstrip(".")
+        text = text.strip().strip(".")
     return text

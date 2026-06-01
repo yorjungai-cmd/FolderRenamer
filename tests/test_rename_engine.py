@@ -40,3 +40,19 @@ def test_safe_filename_length_truncates():
     long_stem = "a" * 300
     result = safe_filename_length(long_stem, ".mp4")
     assert len((result + ".mp4").encode("utf-8")) <= 255
+
+def test_check_filesystem_conflicts(tmp_path):
+    from core.rename_engine import check_filesystem_conflicts
+    existing = str(tmp_path / "exists.mp4")
+    (tmp_path / "exists.mp4").write_text("")
+    src = str(tmp_path / "source.mp4")
+    result = check_filesystem_conflicts([(src, existing)])
+    assert existing in result
+
+def test_check_filesystem_conflicts_same_file(tmp_path):
+    from core.rename_engine import check_filesystem_conflicts
+    f = str(tmp_path / "same.mp4")
+    (tmp_path / "same.mp4").write_text("")
+    # Renaming a file to itself should NOT be flagged
+    result = check_filesystem_conflicts([(f, f)])
+    assert result == []

@@ -49,7 +49,7 @@ def revert_session(path: str) -> dict:
             skipped += 1
             continue
         try:
-            os.rename(new_p, old_p)
+            os.replace(new_p, old_p)  # atomic on Windows, overwrites if old_p exists
             entry["revert_status"] = "reverted"
             reverted += 1
         except OSError as e:

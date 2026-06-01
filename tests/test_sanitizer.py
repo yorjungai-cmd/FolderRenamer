@@ -25,6 +25,10 @@ def test_strip_trailing_dot():
     cfg = _cfg(strip_dots_spaces=True)
     assert sanitize('filename.', cfg) == 'filename'
 
+def test_strip_leading_dot():
+    cfg = _cfg(strip_dots_spaces=True)
+    assert sanitize('.hidden_file', cfg) == 'hidden_file'
+
 def test_strip_leading_space():
     cfg = _cfg(strip_dots_spaces=True)
     assert sanitize('  filename  ', cfg) == 'filename'

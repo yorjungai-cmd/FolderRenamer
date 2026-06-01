@@ -16,6 +16,14 @@ def check_conflicts(renames: List[Tuple[str, str]]) -> List[str]:
     return list(conflicts)
 
 
+def check_filesystem_conflicts(renames: List[Tuple[str, str]]) -> List[str]:
+    """Return new_paths that already exist on disk (excluding same-file renames)."""
+    return [
+        new for old, new in renames
+        if os.path.exists(new) and os.path.abspath(new) != os.path.abspath(old)
+    ]
+
+
 def check_missing_sources(renames: List[Tuple[str, str]]) -> List[str]:
     """Return a list of source paths that do not exist on disk."""
     return [old for old, _ in renames if not os.path.exists(old)]

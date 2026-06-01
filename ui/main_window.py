@@ -10,7 +10,8 @@ from config import AppConfig
 from core.filename_parser import parse_filename, collect_japanese, reconstruct
 from core.sanitizer import sanitize
 from core.rename_engine import (
-    check_conflicts, check_missing_sources, apply_renames, safe_filename_length
+    check_conflicts, check_filesystem_conflicts, check_missing_sources,
+    apply_renames, safe_filename_length
 )
 from core.session_store import save_session
 from api.deepl_provider import DeepLProvider
@@ -110,11 +111,15 @@ class MainWindow(QMainWindow):
             paths, set(self.config.file_extensions), self.config.scan_subdirectories
         )
         worker.file_found.connect(self.file_queue.add_file)
-        worker.finished.connect(
-            lambda n: self.statusBar().showMessage(f"{n} files scanned")
-        )
         worker.start()
         self._scan_workers.append(worker)
+
+        def _on_finished(n, w=worker):
+            self.statusBar().showMessage(f"{n} files scanned")
+            if w in self._scan_workers:
+                self._scan_workers.remove(w)
+
+        worker.finished.connect(_on_finished)
 
     def _get_provider(self):
         if self.config.provider == "deepl" and self.config.deepl_key:
@@ -208,6 +213,14 @@ class MainWindow(QMainWindow):
                 f"{len(conflicts)} output names conflict. Resolve them before applying."
             )
             return
+        fs_conflicts = check_filesystem_conflicts(renames)
+        if fs_conflicts:
+            QMessageBox.warning(
+                self, "Files Already Exist",
+                f"{len(fs_conflicts)} target filenames already exist on disk. "
+                "Edit the translations to use unique names before applying."
+            )
+            return
         missing = check_missing_sources(renames)
         if missing:
             reply = QMessageBox.question(
@@ -239,6 +252,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Applied: {n} renamed, {f} failed")
         if f:
             QMessageBox.warning(self, "Some Renames Failed", f"{f} files could not be renamed.")
+
+    def closeEvent(self, event):
+        # Cancel any in-progress workers before closing
+        for w in self._scan_workers:
+            w.cancel()
+        if self._translation_worker:
+            self._translation_worker.cancel()
+        event.accept()
 
     def _on_settings(self):
         dlg = SettingsDialog(self.config, parent=self)
