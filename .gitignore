@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.pyo
+*.pyd
 dist/
 build/
 *.spec
@@ -8,3 +9,18 @@ build/
 venv/
 *.egg-info/
 .superpowers/
+
+# Environment / secrets
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
