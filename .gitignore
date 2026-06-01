@@ -5,6 +5,7 @@ __pycache__/
 dist/
 build/
 *.spec
+!folder_file_renamer.spec
 .venv/
 venv/
 *.egg-info/
