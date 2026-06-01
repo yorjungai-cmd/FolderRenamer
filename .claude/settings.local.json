@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bash \"C:/Users/User/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/start-server.sh\" --project-dir \"C:/Users/User/Documents/GitHub/Folder File Renamer\")",
+      "Bash(resources/styles.qss)",
+      "Bash(python -c ' *)",
+      "Bash(python docs/superpowers/plans/_append_plan.py)",
+      "Bash(git init *)",
+      "Bash(pip install *)",
+      "Bash(pytest --collect-only)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\User\\\\Documents\\\\GitHub\\\\Folder File Renamer\" -Recurse -Force | Where-Object { -not $_.PSIsContainer } | Select-Object FullName)",
+      "PowerShell(python --version)",
+      "Bash(python -m pytest --collect-only)",
+      "Bash(python -m pytest tests/test_config.py -v)",
+      "Bash(python -m pytest tests/test_filename_parser.py -v)",
+      "Bash(python -m pytest tests/test_sanitizer.py -v)"
+    ]
+  }
+}
