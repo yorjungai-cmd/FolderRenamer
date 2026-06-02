@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import (
     QGridLayout, QListWidget, QMessageBox, QHeaderView, QTableWidget,
     QTableWidgetItem, QSpinBox
 )
+from PyQt6.QtCore import QLocale
 from config import AppConfig
 from api.deepl_provider import DeepLProvider
 from api.openrouter_provider import OpenRouterProvider
@@ -141,6 +142,7 @@ class SettingsDialog(QDialog):
         trim_row = QHBoxLayout()
         trim_row.addWidget(QLabel("Auto-trim filename to max chars (0 = off):"))
         self._max_chars = QSpinBox()
+        self._max_chars.setLocale(QLocale(QLocale.Language.English))
         self._max_chars.setRange(0, 255)
         self._max_chars.setSpecialValueText("Off (0)")
         self._max_chars.setToolTip(
