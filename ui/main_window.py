@@ -280,6 +280,7 @@ class MainWindow(QMainWindow):
             )
             return
         jobs = []
+        self.statusBar().showMessage(f"Preparing {len(files)} files…")
         self.preview.table.setUpdatesEnabled(False)
         self.preview.table.setSortingEnabled(False)
         try:
@@ -334,11 +335,11 @@ class MainWindow(QMainWindow):
         self.preview.set_translated(file_id, stem + ext)
         self._result_count += 1
         if self._result_count % 50 == 0:
-            self.progress_bar.set_approved_count(len(self.preview.get_approved_renames()))
+            self.progress_bar.set_approved_count(self.preview.approved_count)
 
     def _on_translation_done(self):
         self.btn_translate.setEnabled(True)
-        approved  = len(self.preview.get_approved_renames())
+        approved  = self.preview.count_by_status("approved")
         errors    = self.preview.count_by_status("error")
         conflicts = self.preview.count_by_status("conflict")
         self.progress_bar.set_summary(approved, errors, conflicts)

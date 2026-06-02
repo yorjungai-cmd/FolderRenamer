@@ -143,6 +143,148 @@ def test_trim_all_skips_applied_rows():
     assert panel.table.item(panel._row_map[fp], panel.TRANS_COL).text() == original_text
 
 
+def test_status_counters_track_translate_and_error():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from config import AppConfig
+    from ui.preview_panel import PreviewPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel(AppConfig())
+    fp1 = r"C:\demo\a.mp4"
+    fp2 = r"C:\demo\b.mp4"
+    fp3 = r"C:\demo\c.mp4"
+
+    panel.add_row(fp1, "a.mp4")
+    panel.add_row(fp2, "b.mp4")
+    panel.add_row(fp3, "c.mp4")
+    panel.set_translated(fp1, "aa.mp4")
+    panel.set_translated(fp2, "bb.mp4")
+    panel.set_error(fp3, "network error")
+
+    assert panel.approved_count == 2
+    assert panel.count_by_status("approved") == 2
+    assert panel.count_by_status("error") == 1
+
+
+def test_status_counters_track_conflict():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from config import AppConfig
+    from ui.preview_panel import PreviewPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel(AppConfig())
+    fp1 = r"C:\demo\a.mp4"
+    fp2 = r"C:\demo\b.mp4"
+
+    panel.add_row(fp1, "a.mp4")
+    panel.add_row(fp2, "b.mp4")
+    panel.set_translated(fp1, "same.mp4")
+    panel.set_translated(fp2, "same.mp4")
+
+    assert panel.count_by_status("conflict") == 2
+    assert panel.approved_count == 0
+
+
+def test_status_counters_reset_on_clear():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from config import AppConfig
+    from ui.preview_panel import PreviewPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel(AppConfig())
+    fp1 = r"C:\demo\a.mp4"
+    fp2 = r"C:\demo\b.mp4"
+
+    panel.add_row(fp1, "a.mp4")
+    panel.add_row(fp2, "b.mp4")
+    panel.set_translated(fp1, "aa.mp4")
+    panel.set_error(fp2, "oops")
+
+    assert panel.approved_count == 1
+    assert panel.count_by_status("error") == 1
+
+    panel.clear()
+
+    assert panel.approved_count == 0
+    assert panel.count_by_status("error") == 0
+    assert panel.count_by_status("conflict") == 0
+
+
+def test_end_bulk_sets_action_widgets():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication, QPushButton
+    from config import AppConfig
+    from ui.preview_panel import PreviewPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel(AppConfig())
+    fp1 = r"C:\demo\action1.mp4"
+    fp2 = r"C:\demo\action2.mp4"
+
+    panel.add_row(fp1, "action1.mp4")
+    panel.add_row(fp2, "action2.mp4")
+    panel.begin_bulk()
+    panel.set_translated(fp1, "aa.mp4")
+    panel.set_translated(fp2, "bb.mp4")
+
+    # Mid-bulk: no action widgets at all
+    def btn_count(fp):
+        w = panel.table.cellWidget(panel._row_map[fp], panel.ACT_COL)
+        return len(w.findChildren(QPushButton)) if w else 0
+
+    assert panel.table.cellWidget(panel._row_map[fp1], panel.ACT_COL) is None
+    assert panel.table.cellWidget(panel._row_map[fp2], panel.ACT_COL) is None
+
+    panel.end_bulk()
+
+    # After end_bulk: action widgets with approve + edit buttons
+    assert btn_count(fp1) >= 2
+    assert btn_count(fp2) >= 2
+
+
+def test_trim_all_deduplicates_against_stable_file():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from config import AppConfig
+    from ui.preview_panel import PreviewPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel(AppConfig(max_filename_chars=5))
+    fp_long = r"C:\demo\long.mp4"
+    fp_short = r"C:\demo\short.mp4"
+
+    panel.add_row(fp_long, "long.mp4")
+    panel.set_translated(fp_long, "abcdefghij.mp4")   # will trim to "abcde.mp4"
+    panel.add_row(fp_short, "short.mp4")
+    panel.set_translated(fp_short, "abcde.mp4")        # already short — stable, not trimmed
+
+    panel.btn_trim_all.click()
+
+    long_name = panel.table.item(panel._row_map[fp_long], panel.TRANS_COL).text()
+    short_name = panel.table.item(panel._row_map[fp_short], panel.TRANS_COL).text()
+    assert short_name == "abcde.mp4"       # stable file unchanged
+    assert long_name != "abcde.mp4"        # trimmed file must not collide
+    assert long_name == "abcde_2.mp4"      # gets next suffix
+
+
 def test_bulk_mode_defers_filter():
     import os
 
