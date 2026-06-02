@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QComboBox, QPushButton, QLabel
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QColor
 from config import AppConfig
 
@@ -66,9 +66,14 @@ class PreviewPanel(QWidget):
         btn_aa.setObjectName("btn-success")
         btn_ra = QPushButton("✕ All")
         btn_ra.setObjectName("btn-danger")
+        self.btn_trim_all = QPushButton("✂ Trim All")
+        self.btn_trim_all.setObjectName("btn-warning")
+        self.btn_trim_all.setToolTip("Trim all translated filenames that are near or over the length limit")
         btn_aa.clicked.connect(self._approve_all)
         btn_ra.clicked.connect(self._reject_all)
+        self.btn_trim_all.clicked.connect(self._trim_all)
         hl.addWidget(btn_aa)
+        hl.addWidget(self.btn_trim_all)
         hl.addWidget(btn_ra)
         layout.addWidget(hdr)
         self.table = QTableWidget()
@@ -80,7 +85,7 @@ class PreviewPanel(QWidget):
         h.setSectionResizeMode(self.TRANS_COL,QHeaderView.ResizeMode.Stretch)
         h.setSectionResizeMode(self.ACT_COL,  QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(self.S_COL,   28)
-        self.table.setColumnWidth(self.ACT_COL, 100)
+        self.table.setColumnWidth(self.ACT_COL, 112)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
@@ -218,30 +223,32 @@ class PreviewPanel(QWidget):
         container = QWidget()
         hl = QHBoxLayout(container)
         hl.setContentsMargins(2, 2, 2, 2)
-        hl.setSpacing(2)
+        hl.setSpacing(4)
         if state == "done":
-            ba = QPushButton("✓")
-            ba.setFixedWidth(26)
-            ba.setObjectName("btn-success")
+            ba = self._make_action_button("✓", "preview-action-success", "Approve this rename")
             ba.clicked.connect(lambda _, f=fp: self._approve_row(f))
-            be = QPushButton("✎")
-            be.setFixedWidth(26)
+            be = self._make_action_button("✎", "preview-action-neutral", "Edit translated filename")
             be.clicked.connect(lambda _, r=row: self.table.editItem(self.table.item(r, self.TRANS_COL)))
             hl.addWidget(ba)
             hl.addWidget(be)
             if show_trim:
                 limit = self.config.max_filename_chars if self.config.max_filename_chars > 0 else self._WARN_CHARS
-                bt = QPushButton("✂")
-                bt.setFixedWidth(26)
-                bt.setToolTip(f"Trim filename stem to {limit} chars")
+                bt = self._make_action_button("✂", "preview-action-warning", f"Trim filename stem to {limit} chars")
                 bt.clicked.connect(lambda _, f=fp: self._trim_row(f))
                 hl.addWidget(bt)
         elif state == "error":
-            br = QPushButton("↺")
-            br.setFixedWidth(28)
-            br.setObjectName("btn-danger")
+            br = self._make_action_button("↺", "preview-action-danger", "Retry translation")
             hl.addWidget(br)
         self.table.setCellWidget(row, self.ACT_COL, container)
+
+    def _make_action_button(self, text: str, object_name: str, tooltip: str) -> QPushButton:
+        button = QPushButton(text)
+        button.setObjectName(object_name)
+        button.setToolTip(tooltip)
+        button.setAccessibleName(tooltip)
+        button.setFixedSize(QSize(28, 24))
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        return button
 
     def _trim_row(self, fp: str):
         row = self._row_map.get(fp)
@@ -258,10 +265,19 @@ class PreviewPanel(QWidget):
         try:
             ti.setText(new_name)
             self._apply_length_style(ti)
-            self._flag_conflicts(row, fp, new_name)
+            self._recheck_all_conflicts_in_folder(os.path.dirname(fp))
         finally:
             self.table.blockSignals(False)
         self._refresh_row_after_name_change(row, fp)
+
+    def _trim_all(self):
+        for fp, row in list(self._row_map.items()):
+            ti = self.table.item(row, self.TRANS_COL)
+            if not ti or ti.text().startswith("Error:"):
+                continue
+            if not self._needs_trim(ti.text()):
+                continue
+            self._trim_row(fp)
 
     def _on_item_changed(self, item):
         if item.column() != self.TRANS_COL:
@@ -299,9 +315,12 @@ class PreviewPanel(QWidget):
 
     def _refresh_row_after_name_change(self, row: int, fp: str):
         ti = self.table.item(row, self.TRANS_COL)
-        show_trim = bool(ti and filename_length_state(ti.text()) != "normal")
+        show_trim = bool(ti and self._needs_trim(ti.text()))
         self._set_actions(row, fp, "done", show_trim=show_trim)
         self._apply_filter(self._filter.currentText())
+
+    def _needs_trim(self, filename: str) -> bool:
+        return trim_filename_for_preview(filename, self.config.max_filename_chars) != filename
 
     def _recheck_all_conflicts_in_folder(self, folder: str):
         folder_rows = [(fp, r) for fp, r in self._row_map.items()

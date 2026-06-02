@@ -12,6 +12,45 @@ QPushButton#btn-primary:hover { background-color: #4f46e5; }
 QPushButton#btn-success { background-color: #10b981; color: #fff; border: none; }
 QPushButton#btn-success:hover { background-color: #059669; }
 QPushButton#btn-danger { background-color: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+QPushButton#btn-warning { background-color: #fffbeb; color: #b45309; border: 1px solid #fbbf24; }
+QPushButton#btn-warning:hover { background-color: #fef3c7; border-color: #f59e0b; }
+QPushButton#preview-action-success,
+QPushButton#preview-action-neutral,
+QPushButton#preview-action-warning,
+QPushButton#preview-action-danger {
+  min-width: 28px;
+  max-width: 28px;
+  min-height: 24px;
+  max-height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+QPushButton#preview-action-success {
+  background-color: #10b981;
+  color: #ffffff;
+  border: 1px solid #10b981;
+}
+QPushButton#preview-action-success:hover { background-color: #059669; border-color: #059669; }
+QPushButton#preview-action-neutral {
+  background-color: #ffffff;
+  color: #374151;
+  border: 1px solid #cbd5e1;
+}
+QPushButton#preview-action-neutral:hover { background-color: #f3f4f6; border-color: #94a3b8; color: #111827; }
+QPushButton#preview-action-warning {
+  background-color: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fbbf24;
+}
+QPushButton#preview-action-warning:hover { background-color: #fef3c7; border-color: #f59e0b; }
+QPushButton#preview-action-danger {
+  background-color: #fee2e2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+QPushButton#preview-action-danger:hover { background-color: #fecaca; border-color: #f87171; }
 QTreeWidget { border: none; background-color: #f9fafb; outline: none; }
 QTreeWidget::item { padding: 3px 4px; border-bottom: 1px solid #f3f4f6; }
 QTreeWidget::item:selected { background-color: #eef2ff; color: #111827; }
