@@ -126,11 +126,18 @@ The app checks the latest stable GitHub Release from `yorjungai-cmd/FolderRename
 To publish a client update:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 The release workflow builds the PyInstaller EXE and attaches the EXE plus SHA256 file to the GitHub Release.
+
+Before any fix or update is tagged, increment both version fields:
+
+- `app_metadata.py` → `APP_VERSION`
+- `pyproject.toml` → `[project].version`
+
+Never reuse an existing tag for a changed build. Use the next patch/minor version so the in-app updater can always compare versions correctly.
 
 ---
 
