@@ -27,6 +27,7 @@ class SettingsDialog(QDialog):
         self.tabs.addTab(self._api_tab(),   "API")
         self.tabs.addTab(self._san_tab(),   "Sanitization")
         self.tabs.addTab(self._filt_tab(),  "File Filters")
+        self.tabs.addTab(self._app_tab(),   "App")
         v.addWidget(self.tabs)
         footer = QWidget()
         footer.setObjectName("dialog-footer")
@@ -192,6 +193,19 @@ class SettingsDialog(QDialog):
         v.addStretch()
         return w
 
+    def _app_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(16, 16, 16, 16)
+        v.setSpacing(8)
+        self._update_startup = QCheckBox("Check for updates when the app starts")
+        v.addWidget(self._update_startup)
+        note = QLabel("Manual update checks are always available from the main toolbar.")
+        note.setStyleSheet("color:#6b7280;")
+        v.addWidget(note)
+        v.addStretch()
+        return w
+
     def _load(self):
         (self._r_deepl if self.config.provider == "deepl" else self._r_or).setChecked(True)
         self._dk.setText(self.config.deepl_key)
@@ -205,6 +219,7 @@ class SettingsDialog(QDialog):
         (self._ru if rep == "_" else self._rd if rep == "-" else self._rn).setChecked(True)
         self._max_chars.setValue(self.config.max_filename_chars)
         self._subdirs.setChecked(self.config.scan_subdirectories)
+        self._update_startup.setChecked(self.config.check_updates_on_startup)
         for ext in self.config.file_extensions:
             self._el.addItem(ext)
         self._toggle_provider()
@@ -221,6 +236,7 @@ class SettingsDialog(QDialog):
         san.replacement_char = "_" if self._ru.isChecked() else "-" if self._rd.isChecked() else ""
         self.config.max_filename_chars = self._max_chars.value()
         self.config.scan_subdirectories = self._subdirs.isChecked()
+        self.config.check_updates_on_startup = self._update_startup.isChecked()
         self.config.file_extensions = [self._el.item(i).text() for i in range(self._el.count())]
         self.accept()
 

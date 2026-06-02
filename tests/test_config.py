@@ -6,6 +6,7 @@ def test_default_config():
     cfg = AppConfig()
     assert cfg.provider == "deepl"
     assert cfg.batch_delay_ms == 200
+    assert cfg.check_updates_on_startup is True
     assert cfg.sanitization.remove_illegal is True
     assert cfg.sanitization.remove_emoji is True
     assert ".mp4" in cfg.file_extensions

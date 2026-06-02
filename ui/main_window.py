@@ -3,10 +3,13 @@ from pathlib import Path
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QSplitter, QPushButton, QFileDialog, QMessageBox
+    QSplitter, QPushButton, QFileDialog, QMessageBox, QProgressDialog
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices
+from app_metadata import APP_VERSION
 from config import AppConfig
+from core.update_checker import UpdateInfo
 from core.filename_parser import parse_filename, collect_japanese, reconstruct
 from core.sanitizer import sanitize
 from core.rename_engine import (
@@ -18,6 +21,7 @@ from api.deepl_provider import DeepLProvider
 from api.openrouter_provider import OpenRouterProvider
 from workers.scan_worker import ScanWorker
 from workers.translation_worker import TranslationWorker, TranslationJob
+from workers.update_worker import UpdateCheckWorker, UpdateDownloadWorker
 from ui.file_queue_panel import FileQueuePanel
 from ui.preview_panel import PreviewPanel
 from ui.progress_bar_widget import ProgressBarWidget
@@ -31,12 +35,16 @@ class MainWindow(QMainWindow):
         self.config = config
         self._scan_workers: list = []
         self._translation_worker: TranslationWorker | None = None
+        self._update_worker: UpdateCheckWorker | UpdateDownloadWorker | None = None
+        self._update_progress: QProgressDialog | None = None
         self.setWindowTitle("Folder File Renamer")
         self.setMinimumSize(1000, 600)
         self.resize(1280, 720)
         self.setAcceptDrops(True)
         self._build_ui()
         self._connect_signals()
+        if self.config.check_updates_on_startup:
+            QTimer.singleShot(1500, self._check_updates_on_startup)
 
     def _build_ui(self):
         root = QWidget()
@@ -74,7 +82,9 @@ class MainWindow(QMainWindow):
         self.btn_translate.setObjectName("btn-success")
         self.btn_settings = QPushButton("⚙  Settings")
         self.btn_history = QPushButton("🕒  History")
+        self.btn_updates = QPushButton("↻  Updates")
         h.addWidget(self.btn_translate)
+        h.addWidget(self.btn_updates)
         h.addWidget(self.btn_settings)
         h.addWidget(self.btn_history)
         return bar
@@ -84,11 +94,122 @@ class MainWindow(QMainWindow):
         self.btn_add_files.clicked.connect(self._on_add_files)
         self.btn_clear.clicked.connect(self._on_clear)
         self.btn_translate.clicked.connect(self._on_translate_all)
+        self.btn_updates.clicked.connect(self._on_check_updates)
         self.btn_settings.clicked.connect(self._on_settings)
         self.btn_history.clicked.connect(self._on_history)
         self.progress_bar.stop_requested.connect(self._on_stop)
         self.progress_bar.apply_requested.connect(self._on_apply)
         self.progress_bar.revert_requested.connect(self._on_history)
+
+    def _check_updates_on_startup(self):
+        self._start_update_check(manual=False)
+
+    def _on_check_updates(self):
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, manual: bool):
+        if self._update_worker and self._update_worker.isRunning():
+            if manual:
+                QMessageBox.information(self, "Updates", "An update check is already running.")
+            return
+        if manual:
+            self.statusBar().showMessage("Checking for updates...")
+        self.btn_updates.setEnabled(False)
+        worker = UpdateCheckWorker()
+        worker.update_checked.connect(lambda info, m=manual: self._on_update_checked(info, m))
+        worker.update_error.connect(lambda message, m=manual: self._on_update_error(message, m))
+        worker.finished.connect(lambda: self.btn_updates.setEnabled(True))
+        worker.finished.connect(lambda: self._clear_update_worker(worker))
+        self._update_worker = worker
+        worker.start()
+
+    def _clear_update_worker(self, worker):
+        if self._update_worker is worker:
+            self._update_worker = None
+
+    def _on_update_error(self, message: str, manual: bool):
+        self.statusBar().clearMessage()
+        if manual:
+            QMessageBox.warning(self, "Update Check Failed", message)
+
+    def _on_update_checked(self, info: UpdateInfo, manual: bool):
+        self.statusBar().clearMessage()
+        if not info.update_available:
+            if manual:
+                QMessageBox.information(
+                    self,
+                    "No Updates",
+                    info.message or f"Version {APP_VERSION} is the latest version.",
+                )
+            return
+        self._prompt_for_update(info)
+
+    def _prompt_for_update(self, info: UpdateInfo):
+        box = QMessageBox(self)
+        box.setWindowTitle("Update Available")
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setText(f"Folder File Renamer {info.latest_version} is available.")
+        box.setInformativeText(
+            f"You are running {info.current_version}. Download the verified update now?"
+        )
+        if info.notes:
+            box.setDetailedText(info.notes[:4000])
+        download_btn = box.addButton("Download", QMessageBox.ButtonRole.AcceptRole)
+        release_btn = box.addButton("Open Release", QMessageBox.ButtonRole.ActionRole)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is download_btn:
+            self._start_update_download(info)
+        elif clicked is release_btn and info.release_url:
+            QDesktopServices.openUrl(QUrl(info.release_url))
+
+    def _start_update_download(self, info: UpdateInfo):
+        if self._update_worker and self._update_worker.isRunning():
+            QMessageBox.information(self, "Updates", "An update operation is already running.")
+            return
+        progress = QProgressDialog("Downloading update...", "Cancel", 0, max(info.asset_size, 1), self)
+        progress.setCancelButton(None)
+        progress.setWindowTitle("Downloading Update")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.show()
+        self._update_progress = progress
+
+        worker = UpdateDownloadWorker(info)
+        worker.download_progress.connect(self._on_update_download_progress)
+        worker.download_finished.connect(self._on_update_download_finished)
+        worker.download_error.connect(self._on_update_download_error)
+        worker.finished.connect(lambda: self._clear_update_worker(worker))
+        self._update_worker = worker
+        worker.start()
+
+    def _on_update_download_progress(self, current: int, total: int):
+        if not self._update_progress:
+            return
+        if total > 0 and self._update_progress.maximum() != total:
+            self._update_progress.setMaximum(total)
+        self._update_progress.setValue(current)
+
+    def _on_update_download_finished(self, path: str):
+        if self._update_progress:
+            self._update_progress.close()
+            self._update_progress = None
+        folder = os.path.dirname(path)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
+        QMessageBox.information(
+            self,
+            "Update Ready",
+            "The update was downloaded and verified.\n\n"
+            "Close Folder File Renamer, then run the downloaded EXE or replace your current copy.",
+        )
+
+    def _on_update_download_error(self, message: str):
+        if self._update_progress:
+            self._update_progress.close()
+            self._update_progress = None
+        QMessageBox.warning(self, "Update Download Failed", message)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

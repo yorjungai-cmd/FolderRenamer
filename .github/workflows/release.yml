@@ -1,32 +1,49 @@
-name: Build & Release
+name: Release Windows EXE
 
 on:
   push:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -v
 
       - name: Build single-file EXE
         run: pyinstaller folder_file_renamer.spec --clean
 
-      - name: Create GitHub Release
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          $exe = "FolderFileRenamer-${{ github.ref_name }}.exe"
+          Copy-Item "dist/FolderFileRenamer.exe" $exe
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  $exe" | Out-File "$exe.sha256" -Encoding ascii -NoNewline
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/FolderFileRenamer.exe
           generate_release_notes: true
+          files: |
+            FolderFileRenamer-${{ github.ref_name }}.exe
+            FolderFileRenamer-${{ github.ref_name }}.exe.sha256

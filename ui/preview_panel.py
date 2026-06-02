@@ -7,6 +7,31 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from config import AppConfig
 
+
+WARN_CHARS = 200
+MAX_CHARS = 255
+
+
+def filename_length_state(filename: str) -> str:
+    n = len(filename)
+    if n > MAX_CHARS:
+        return "exceeds_limit"
+    if n > WARN_CHARS:
+        return "near_limit"
+    return "normal"
+
+
+def trim_filename_for_preview(filename: str, max_filename_chars: int) -> str:
+    stem, ext = os.path.splitext(filename)
+    if max_filename_chars > 0:
+        limit = max_filename_chars
+    else:
+        limit = max(WARN_CHARS - len(ext), 0)
+    if len(stem) <= limit:
+        return filename
+    return stem[:limit].rstrip() + ext
+
+
 class PreviewPanel(QWidget):
     S_COL, ORIG_COL, TRANS_COL, ACT_COL = 0, 1, 2, 3
 
@@ -31,7 +56,10 @@ class PreviewPanel(QWidget):
         hl.addStretch()
         hl.addWidget(QLabel("Filter:"))
         self._filter = QComboBox()
-        self._filter.addItems(["All", "Approved", "Errors", "Conflicts", "Pending"])
+        self._filter.addItems([
+            "All", "Approved", "Errors", "Conflicts", "Pending",
+            "Char Near Limit", "Char Exceeds Limit"
+        ])
         self._filter.currentTextChanged.connect(self._apply_filter)
         hl.addWidget(self._filter)
         btn_aa = QPushButton("✓ All")
@@ -88,29 +116,20 @@ class PreviewPanel(QWidget):
         self.table.setItem(row, self.TRANS_COL, ti)
         self._set_actions(row, fp, "pending")
 
-    _WARN_CHARS = 200
-    _MAX_CHARS  = 255
+    _WARN_CHARS = WARN_CHARS
+    _MAX_CHARS  = MAX_CHARS
 
     def set_translated(self, fp: str, translated_name: str):
         row = self._row_map.get(fp)
         if row is None:
             return
-        n = len(translated_name)
         self.table.blockSignals(True)
         try:
             ti = self.table.item(row, self.TRANS_COL)
             if ti:
                 ti.setText(translated_name)
                 ti.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
-                if n >= self._MAX_CHARS:
-                    ti.setForeground(QColor("#ef4444"))
-                    ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
-                elif n >= self._WARN_CHARS:
-                    ti.setForeground(QColor("#f59e0b"))
-                    ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
-                else:
-                    ti.setForeground(QColor("#111827"))
-                    ti.setToolTip(f"{n} chars")
+                self._apply_length_style(ti)
             si = self.table.item(row, self.S_COL)
             if si:
                 si.setText("✓")
@@ -119,7 +138,7 @@ class PreviewPanel(QWidget):
             self._flag_conflicts(row, fp, translated_name)
         finally:
             self.table.blockSignals(False)
-        self._set_actions(row, fp, "done", show_trim=(n >= self._WARN_CHARS))
+        self._refresh_row_after_name_change(row, fp)
 
     def set_error(self, fp: str, error_msg: str):
         row = self._row_map.get(fp)
@@ -198,22 +217,22 @@ class PreviewPanel(QWidget):
     def _set_actions(self, row: int, fp: str, state: str, show_trim: bool = False):
         container = QWidget()
         hl = QHBoxLayout(container)
-        hl.setContentsMargins(4, 2, 4, 2)
-        hl.setSpacing(3)
+        hl.setContentsMargins(2, 2, 2, 2)
+        hl.setSpacing(2)
         if state == "done":
             ba = QPushButton("✓")
-            ba.setFixedWidth(28)
+            ba.setFixedWidth(26)
             ba.setObjectName("btn-success")
             ba.clicked.connect(lambda _, f=fp: self._approve_row(f))
             be = QPushButton("✎")
-            be.setFixedWidth(28)
+            be.setFixedWidth(26)
             be.clicked.connect(lambda _, r=row: self.table.editItem(self.table.item(r, self.TRANS_COL)))
             hl.addWidget(ba)
             hl.addWidget(be)
             if show_trim:
                 limit = self.config.max_filename_chars if self.config.max_filename_chars > 0 else self._WARN_CHARS
                 bt = QPushButton("✂")
-                bt.setFixedWidth(28)
+                bt.setFixedWidth(26)
                 bt.setToolTip(f"Trim filename stem to {limit} chars")
                 bt.clicked.connect(lambda _, f=fp: self._trim_row(f))
                 hl.addWidget(bt)
@@ -232,28 +251,17 @@ class PreviewPanel(QWidget):
         if not ti:
             return
         current = ti.text()
-        stem, ext = os.path.splitext(current)
-        limit = self.config.max_filename_chars if self.config.max_filename_chars > 0 else self._WARN_CHARS
-        if len(stem) <= limit:
+        new_name = trim_filename_for_preview(current, self.config.max_filename_chars)
+        if new_name == current:
             return
-        new_name = stem[:limit].rstrip() + ext
-        n = len(new_name)
         self.table.blockSignals(True)
         try:
             ti.setText(new_name)
-            if n >= self._MAX_CHARS:
-                ti.setForeground(QColor("#ef4444"))
-                ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
-            elif n >= self._WARN_CHARS:
-                ti.setForeground(QColor("#f59e0b"))
-                ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
-            else:
-                ti.setForeground(QColor("#111827"))
-                ti.setToolTip(f"{n} chars")
+            self._apply_length_style(ti)
             self._flag_conflicts(row, fp, new_name)
         finally:
             self.table.blockSignals(False)
-        self._set_actions(row, fp, "done", show_trim=(n >= self._WARN_CHARS))
+        self._refresh_row_after_name_change(row, fp)
 
     def _on_item_changed(self, item):
         if item.column() != self.TRANS_COL:
@@ -269,20 +277,31 @@ class PreviewPanel(QWidget):
         row = item.row()
         self.table.blockSignals(True)
         try:
-            n = len(new_name)
-            if n >= self._MAX_CHARS:
-                item.setForeground(QColor("#ef4444"))
-                item.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
-            elif n >= self._WARN_CHARS:
-                item.setForeground(QColor("#f59e0b"))
-                item.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
-            else:
-                item.setForeground(QColor("#111827"))
-                item.setToolTip(f"{n} chars")
+            self._apply_length_style(item)
             self._recheck_all_conflicts_in_folder(folder)
         finally:
             self.table.blockSignals(False)
-        self._set_actions(row, fp, "done", show_trim=(n >= self._WARN_CHARS))
+        self._refresh_row_after_name_change(row, fp)
+
+    def _apply_length_style(self, item: QTableWidgetItem):
+        n = len(item.text())
+        state = filename_length_state(item.text())
+        item.setData(Qt.ItemDataRole.UserRole + 1, state)
+        if state == "exceeds_limit":
+            item.setForeground(QColor("#ef4444"))
+            item.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; trim before applying")
+        elif state == "near_limit":
+            item.setForeground(QColor("#f59e0b"))
+            item.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
+        else:
+            item.setForeground(QColor("#111827"))
+            item.setToolTip(f"{n} chars")
+
+    def _refresh_row_after_name_change(self, row: int, fp: str):
+        ti = self.table.item(row, self.TRANS_COL)
+        show_trim = bool(ti and filename_length_state(ti.text()) != "normal")
+        self._set_actions(row, fp, "done", show_trim=show_trim)
+        self._apply_filter(self._filter.currentText())
 
     def _recheck_all_conflicts_in_folder(self, folder: str):
         folder_rows = [(fp, r) for fp, r in self._row_map.items()
@@ -351,5 +370,13 @@ class PreviewPanel(QWidget):
         want = status_map.get(text, "")
         for row in range(self.table.rowCount()):
             si = self.table.item(row, self.S_COL)
+            ti = self.table.item(row, self.TRANS_COL)
             status = si.data(Qt.ItemDataRole.UserRole) if si else ""
-            self.table.setRowHidden(row, text != "All" and status != want)
+            length_state = filename_length_state(ti.text()) if ti else ""
+            if text == "Char Near Limit":
+                hide = length_state != "near_limit"
+            elif text == "Char Exceeds Limit":
+                hide = length_state != "exceeds_limit"
+            else:
+                hide = text != "All" and status != want
+            self.table.setRowHidden(row, hide)

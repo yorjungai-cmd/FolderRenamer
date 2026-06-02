@@ -13,6 +13,7 @@ Windows desktop app that batch-translates Japanese filenames to English using De
 - **Filename length guard** — translated names >= 200 chars turn yellow (warning), >= 255 chars turn red; optional autotrim limit in Settings
 - **Sanitization** — strip emojis, Windows-illegal chars, full-width to ASCII, trailing dots, control chars, double spaces
 - **Apply & Revert** — renames are written atomically; every session is saved to `%APPDATA%\FolderFileRenamer\sessions\` and can be reverted from the History dialog
+- **Guided updates** — checks GitHub Releases for newer stable builds, downloads the EXE, verifies SHA256, then opens the update folder
 - **Single-file EXE** — ships as one self-contained `FolderFileRenamer.exe`
 
 ---
@@ -114,6 +115,22 @@ Settings are persisted to `%APPDATA%\FolderFileRenamer\config.json`.
 | `max_filename_chars` | `0` (off) | Autotrim stem to this many chars (0 = disabled) |
 | `batch_delay_ms` | `200` | Delay between API batches (ms) |
 | `request_timeout_s` | `30` | HTTP timeout per request (s) |
+| `check_updates_on_startup` | `true` | Check GitHub Releases for stable updates when the app starts |
+
+---
+
+## Updates & Releases
+
+The app checks the latest stable GitHub Release from `yorjungai-cmd/FolderRenamer`. It downloads `FolderFileRenamer-vX.Y.Z.exe`, verifies it against `FolderFileRenamer-vX.Y.Z.exe.sha256`, then opens the downloaded file location. It does not overwrite the running EXE automatically.
+
+To publish a client update:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The release workflow builds the PyInstaller EXE and attaches the EXE plus SHA256 file to the GitHub Release.
 
 ---
 

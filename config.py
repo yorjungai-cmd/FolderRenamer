@@ -30,6 +30,7 @@ class AppConfig:
     ])
     scan_subdirectories: bool = True
     max_filename_chars: int = 0
+    check_updates_on_startup: bool = True
     sanitization: SanitizationConfig = field(default_factory=SanitizationConfig)
 
     def save(self):
