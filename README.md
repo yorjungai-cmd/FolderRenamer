@@ -10,10 +10,14 @@ Windows desktop app that batch-translates Japanese filenames to English using De
 - **Smart parsing** — studio codes (`SSIS-123`), resolution tags (`4K`, `1080p`), bracketed labels (`[Uncensored]`) and years are preserved; only CJK text is sent for translation
 - **Dual provider** — DeepL (batch of 50) or any OpenRouter model (batch of 5); configurable in Settings
 - **Preview table** — per-file approve / reject / inline edit before committing any renames
-- **Filename length guard** — translated names >= 200 chars turn yellow (warning), >= 255 chars turn red; optional autotrim limit in Settings
+- **Retry translation** — rows that failed with an error show a ↺ button to re-translate individually without re-running the whole batch
+- **✂ Trim All** — trims every filename that exceeds the configured length limit in one click; files that would collide after trimming get `_2`, `_3`, … suffixes automatically
+- **Issues filter** — a single `⚠ Issues` button narrows the table to only errors and conflicts; the view switches there automatically when a batch finishes with unresolved rows
+- **Filename length guard** — translated names ≥ 200 chars turn yellow (warning), ≥ 255 chars turn red; optional autotrim limit in Settings
 - **Sanitization** — strip emojis, Windows-illegal chars, full-width to ASCII, trailing dots, control chars, double spaces
 - **Apply & Revert** — renames are written atomically; every session is saved to `%APPDATA%\FolderFileRenamer\sessions\` and can be reverted from the History dialog
 - **Guided updates** — checks GitHub Releases for newer stable builds, downloads the EXE, verifies SHA256, then opens the update folder
+- **Large-folder performance** — 1 400+ file batches stay responsive throughout: O(N) conflict detection, deferred UI updates, single repaint at batch completion
 - **Single-file EXE** — ships as one self-contained `FolderFileRenamer.exe`
 
 ---
@@ -95,7 +99,8 @@ Folder File Renamer/
     ├── test_session_store.py
     ├── test_rename_engine.py
     ├── test_deepl_provider.py
-    └── test_openrouter_provider.py
+    ├── test_openrouter_provider.py
+    └── test_preview_panel_logic.py  # Qt-free unit tests for PreviewPanel logic
 ```
 
 ---
@@ -161,7 +166,7 @@ The hard trim (255-byte UTF-8) runs in `core/rename_engine.safe_filename_length`
 pytest -v
 ```
 
-Core logic (`filename_parser`, `sanitizer`, `rename_engine`, `session_store`, API providers) is pure Python — no Qt dependency — and is fully unit-tested.
+Core logic (`filename_parser`, `sanitizer`, `rename_engine`, `session_store`, API providers) is pure Python — no Qt dependency — and is fully unit-tested. `test_preview_panel_logic.py` covers PreviewPanel behaviour (filter, bulk mode, conflict detection, trim deduplication, status counters) using the offscreen Qt platform — no display required.
 
 ---
 
