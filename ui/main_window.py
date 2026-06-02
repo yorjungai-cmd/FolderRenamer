@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
         self._translation_worker: TranslationWorker | None = None
         self._update_worker: UpdateCheckWorker | UpdateDownloadWorker | None = None
         self._update_progress: QProgressDialog | None = None
-        self.setWindowTitle("Folder File Renamer")
+        self.setWindowTitle(f"Folder File Renamer v{APP_VERSION}")
         self.setMinimumSize(1000, 600)
         self.resize(1280, 720)
         self.setAcceptDrops(True)
