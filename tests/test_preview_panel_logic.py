@@ -257,6 +257,35 @@ def test_end_bulk_sets_action_widgets():
     assert btn_count(fp2) >= 2
 
 
+def test_issues_filter_shows_only_errors_and_conflicts():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PyQt6.QtWidgets import QApplication
+    from config import AppConfig
+    from ui.preview_panel import PreviewPanel
+
+    app = QApplication.instance() or QApplication([])
+    panel = PreviewPanel(AppConfig())
+    fp_ok    = r"C:\demo\ok.mp4"
+    fp_err   = r"C:\demo\err.mp4"
+    fp_same1 = r"C:\demo\c1.mp4"
+    fp_same2 = r"C:\demo\c2.mp4"
+
+    panel.add_row(fp_ok, "ok.mp4");     panel.set_translated(fp_ok,    "ok.mp4")
+    panel.add_row(fp_err, "err.mp4");   panel.set_error(fp_err,        "network error")
+    panel.add_row(fp_same1, "c1.mp4");  panel.set_translated(fp_same1, "same.mp4")
+    panel.add_row(fp_same2, "c2.mp4");  panel.set_translated(fp_same2, "same.mp4")
+
+    panel.btn_show_issues.click()
+
+    assert panel.table.isRowHidden(panel._row_map[fp_ok])    is True   # approved → hidden
+    assert panel.table.isRowHidden(panel._row_map[fp_err])   is False  # error → visible
+    assert panel.table.isRowHidden(panel._row_map[fp_same1]) is False  # conflict → visible
+    assert panel.table.isRowHidden(panel._row_map[fp_same2]) is False  # conflict → visible
+
+
 def test_trim_all_deduplicates_against_stable_file():
     import os
 

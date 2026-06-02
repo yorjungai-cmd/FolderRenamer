@@ -343,6 +343,8 @@ class MainWindow(QMainWindow):
         errors    = self.preview.count_by_status("error")
         conflicts = self.preview.count_by_status("conflict")
         self.progress_bar.set_summary(approved, errors, conflicts)
+        if errors + conflicts > 0:
+            self.preview.btn_show_issues.click()
 
     def _on_retry_file(self, fp: str):
         provider = self._get_provider()

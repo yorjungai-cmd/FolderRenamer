@@ -63,11 +63,15 @@ class PreviewPanel(QWidget):
         hl.addWidget(QLabel("Filter:"))
         self._filter = QComboBox()
         self._filter.addItems([
-            "All", "Approved", "Errors", "Conflicts", "Pending",
+            "All", "Issues", "Approved", "Errors", "Conflicts", "Pending",
             "Char Near Limit", "Char Exceeds Limit"
         ])
         self._filter.currentTextChanged.connect(self._on_filter_changed)
         hl.addWidget(self._filter)
+        self.btn_show_issues = QPushButton("⚠ Issues")
+        self.btn_show_issues.setObjectName("btn-warning")
+        self.btn_show_issues.setToolTip("Show only errors and conflicts that need attention")
+        self.btn_show_issues.clicked.connect(lambda: self._filter.setCurrentText("Issues"))
         btn_aa = QPushButton("✓ All")
         btn_aa.setObjectName("btn-success")
         btn_ra = QPushButton("✕ All")
@@ -78,6 +82,7 @@ class PreviewPanel(QWidget):
         btn_aa.clicked.connect(self._approve_all)
         btn_ra.clicked.connect(self._reject_all)
         self.btn_trim_all.clicked.connect(self._trim_all)
+        hl.addWidget(self.btn_show_issues)
         hl.addWidget(btn_aa)
         hl.addWidget(self.btn_trim_all)
         hl.addWidget(btn_ra)
@@ -568,6 +573,8 @@ class PreviewPanel(QWidget):
                 hide = length_state != "near_limit"
             elif text == "Char Exceeds Limit":
                 hide = length_state != "exceeds_limit"
+            elif text == "Issues":
+                hide = status not in ("error", "conflict", "pending")
             else:
                 hide = text != "All" and status != want
             self.table.setRowHidden(row, hide)
