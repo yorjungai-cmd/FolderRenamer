@@ -261,11 +261,23 @@ class MainWindow(QMainWindow):
         save_session(session)
         for r in results:
             if r["status"] == "renamed":
+                self.preview.mark_applied(r["old_path"])
                 self.file_queue.update_path(r["old_path"], r["new_path"])
+            else:
+                self.preview.mark_failed(r["old_path"])
         n, f = session["stats"]["renamed"], session["stats"]["failed"]
         self.statusBar().showMessage(f"Applied: {n} renamed, {f} failed")
+        def _s(count): return "s" if count != 1 else ""
         if f:
-            QMessageBox.warning(self, "Some Renames Failed", f"{f} files could not be renamed.")
+            QMessageBox.warning(
+                self, "Apply Complete",
+                f"{n} file{_s(n)} renamed successfully.\n{f} file{_s(f)} could not be renamed."
+            )
+        else:
+            QMessageBox.information(
+                self, "Apply Complete",
+                f"✓ {n} file{_s(n)} renamed successfully."
+            )
 
     def closeEvent(self, event):
         # Cancel any in-progress workers before closing

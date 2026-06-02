@@ -58,6 +58,7 @@ class PreviewPanel(QWidget):
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked)
         layout.addWidget(self.table)
+        self.table.itemChanged.connect(self._on_item_changed)
 
     def store_segments(self, fp: str, segments: list):
         self._segments[fp] = segments
@@ -94,41 +95,49 @@ class PreviewPanel(QWidget):
         row = self._row_map.get(fp)
         if row is None:
             return
-        ti = self.table.item(row, self.TRANS_COL)
-        if ti:
-            ti.setText(translated_name)
-            ti.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
-            n = len(translated_name)
-            if n >= self._MAX_CHARS:
-                ti.setForeground(QColor("#ef4444"))
-                ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
-            elif n >= self._WARN_CHARS:
-                ti.setForeground(QColor("#f59e0b"))
-                ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
-            else:
-                ti.setForeground(QColor("#111827"))
-                ti.setToolTip(f"{n} chars")
-        si = self.table.item(row, self.S_COL)
-        if si:
-            si.setText("✓")
-            si.setForeground(QColor("#10b981"))
-            si.setData(Qt.ItemDataRole.UserRole, "approved")
+        n = len(translated_name)
+        self.table.blockSignals(True)
+        try:
+            ti = self.table.item(row, self.TRANS_COL)
+            if ti:
+                ti.setText(translated_name)
+                ti.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
+                if n >= self._MAX_CHARS:
+                    ti.setForeground(QColor("#ef4444"))
+                    ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
+                elif n >= self._WARN_CHARS:
+                    ti.setForeground(QColor("#f59e0b"))
+                    ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
+                else:
+                    ti.setForeground(QColor("#111827"))
+                    ti.setToolTip(f"{n} chars")
+            si = self.table.item(row, self.S_COL)
+            if si:
+                si.setText("✓")
+                si.setForeground(QColor("#10b981"))
+                si.setData(Qt.ItemDataRole.UserRole, "approved")
+            self._flag_conflicts(row, fp, translated_name)
+        finally:
+            self.table.blockSignals(False)
         self._set_actions(row, fp, "done", show_trim=(n >= self._WARN_CHARS))
-        self._flag_conflicts(row, fp, translated_name)
 
     def set_error(self, fp: str, error_msg: str):
         row = self._row_map.get(fp)
         if row is None:
             return
-        ti = self.table.item(row, self.TRANS_COL)
-        if ti:
-            ti.setText(f"Error: {error_msg}")
-            ti.setForeground(QColor("#ef4444"))
-        si = self.table.item(row, self.S_COL)
-        if si:
-            si.setText("✕")
-            si.setForeground(QColor("#ef4444"))
-            si.setData(Qt.ItemDataRole.UserRole, "error")
+        self.table.blockSignals(True)
+        try:
+            ti = self.table.item(row, self.TRANS_COL)
+            if ti:
+                ti.setText(f"Error: {error_msg}")
+                ti.setForeground(QColor("#ef4444"))
+            si = self.table.item(row, self.S_COL)
+            if si:
+                si.setText("✕")
+                si.setForeground(QColor("#ef4444"))
+                si.setData(Qt.ItemDataRole.UserRole, "error")
+        finally:
+            self.table.blockSignals(False)
         self._set_actions(row, fp, "error")
 
     def get_approved_renames(self) -> list[tuple[str, str]]:
@@ -151,6 +160,40 @@ class PreviewPanel(QWidget):
         self.table.setRowCount(0)
         self._row_map.clear()
         self._segments.clear()
+
+    def mark_applied(self, fp: str):
+        row = self._row_map.get(fp)
+        if row is None:
+            return
+        self.table.blockSignals(True)
+        try:
+            for col in (self.S_COL, self.ORIG_COL, self.TRANS_COL):
+                item = self.table.item(row, col)
+                if item:
+                    item.setBackground(QColor("#d1fae5"))
+                    item.setForeground(QColor("#065f46"))
+            si = self.table.item(row, self.S_COL)
+            if si:
+                si.setText("✓")
+        finally:
+            self.table.blockSignals(False)
+
+    def mark_failed(self, fp: str):
+        row = self._row_map.get(fp)
+        if row is None:
+            return
+        self.table.blockSignals(True)
+        try:
+            for col in (self.S_COL, self.ORIG_COL, self.TRANS_COL):
+                item = self.table.item(row, col)
+                if item:
+                    item.setBackground(QColor("#fee2e2"))
+                    item.setForeground(QColor("#991b1b"))
+            si = self.table.item(row, self.S_COL)
+            if si:
+                si.setText("✕")
+        finally:
+            self.table.blockSignals(False)
 
     def _set_actions(self, row: int, fp: str, state: str, show_trim: bool = False):
         container = QWidget()
@@ -194,19 +237,69 @@ class PreviewPanel(QWidget):
         if len(stem) <= limit:
             return
         new_name = stem[:limit].rstrip() + ext
-        ti.setText(new_name)
         n = len(new_name)
-        if n >= self._MAX_CHARS:
-            ti.setForeground(QColor("#ef4444"))
-            ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
-        elif n >= self._WARN_CHARS:
-            ti.setForeground(QColor("#f59e0b"))
-            ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
-        else:
-            ti.setForeground(QColor("#111827"))
-            ti.setToolTip(f"{n} chars")
+        self.table.blockSignals(True)
+        try:
+            ti.setText(new_name)
+            if n >= self._MAX_CHARS:
+                ti.setForeground(QColor("#ef4444"))
+                ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
+            elif n >= self._WARN_CHARS:
+                ti.setForeground(QColor("#f59e0b"))
+                ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
+            else:
+                ti.setForeground(QColor("#111827"))
+                ti.setToolTip(f"{n} chars")
+            self._flag_conflicts(row, fp, new_name)
+        finally:
+            self.table.blockSignals(False)
         self._set_actions(row, fp, "done", show_trim=(n >= self._WARN_CHARS))
-        self._flag_conflicts(row, fp, new_name)
+
+    def _on_item_changed(self, item):
+        if item.column() != self.TRANS_COL:
+            return
+        oi = self.table.item(item.row(), self.ORIG_COL)
+        if not oi:
+            return
+        fp = oi.data(Qt.ItemDataRole.UserRole)
+        if not fp:
+            return
+        new_name = item.text()
+        folder = os.path.dirname(fp)
+        row = item.row()
+        self.table.blockSignals(True)
+        try:
+            n = len(new_name)
+            if n >= self._MAX_CHARS:
+                item.setForeground(QColor("#ef4444"))
+                item.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
+            elif n >= self._WARN_CHARS:
+                item.setForeground(QColor("#f59e0b"))
+                item.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
+            else:
+                item.setForeground(QColor("#111827"))
+                item.setToolTip(f"{n} chars")
+            self._recheck_all_conflicts_in_folder(folder)
+        finally:
+            self.table.blockSignals(False)
+        self._set_actions(row, fp, "done", show_trim=(n >= self._WARN_CHARS))
+
+    def _recheck_all_conflicts_in_folder(self, folder: str):
+        folder_rows = [(fp, r) for fp, r in self._row_map.items()
+                       if os.path.dirname(fp) == folder]
+        for fp, r in folder_rows:
+            si = self.table.item(r, self.S_COL)
+            ti = self.table.item(r, self.TRANS_COL)
+            if si and si.data(Qt.ItemDataRole.UserRole) == "conflict":
+                si.setText("✓")
+                si.setForeground(QColor("#10b981"))
+                si.setData(Qt.ItemDataRole.UserRole, "approved")
+                if ti:
+                    ti.setBackground(QColor("transparent"))
+        for fp, r in folder_rows:
+            ti = self.table.item(r, self.TRANS_COL)
+            if ti and not ti.text().startswith("Error:"):
+                self._flag_conflicts(r, fp, ti.text())
 
     def _approve_row(self, fp: str):
         row = self._row_map.get(fp)
