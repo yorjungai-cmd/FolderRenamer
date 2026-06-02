@@ -18,17 +18,17 @@ a = Analysis(
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
-    pyz, a.scripts, [],
-    exclude_binaries=True,
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    exclude_binaries=False,
     name="FolderFileRenamer",
     debug=False,
     strip=False,
     upx=True,
     console=False,
     icon="resources/icon.ico" if os.path.exists("resources/icon.ico") else None,
-)
-coll = COLLECT(
-    exe, a.binaries, a.zipfiles, a.datas,
-    strip=False, upx=True,
-    name="FolderFileRenamer",
 )

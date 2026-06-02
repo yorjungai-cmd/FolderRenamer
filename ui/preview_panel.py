@@ -87,6 +87,9 @@ class PreviewPanel(QWidget):
         self.table.setItem(row, self.TRANS_COL, ti)
         self._set_actions(row, fp, "pending")
 
+    _WARN_CHARS = 200
+    _MAX_CHARS  = 255
+
     def set_translated(self, fp: str, translated_name: str):
         row = self._row_map.get(fp)
         if row is None:
@@ -94,8 +97,17 @@ class PreviewPanel(QWidget):
         ti = self.table.item(row, self.TRANS_COL)
         if ti:
             ti.setText(translated_name)
-            ti.setForeground(QColor("#111827"))
             ti.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEditable)
+            n = len(translated_name)
+            if n >= self._MAX_CHARS:
+                ti.setForeground(QColor("#ef4444"))
+                ti.setToolTip(f"⚠ Filename is {n} chars — exceeds Windows 255-char limit; was auto-trimmed")
+            elif n >= self._WARN_CHARS:
+                ti.setForeground(QColor("#f59e0b"))
+                ti.setToolTip(f"⚠ Filename is {n} chars — may cause issues on deeply nested paths (limit: 255)")
+            else:
+                ti.setForeground(QColor("#111827"))
+                ti.setToolTip(f"{n} chars")
         si = self.table.item(row, self.S_COL)
         if si:
             si.setText("✓")

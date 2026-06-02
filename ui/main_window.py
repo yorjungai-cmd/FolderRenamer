@@ -64,8 +64,11 @@ class MainWindow(QMainWindow):
         self.btn_add_folder = QPushButton("+ Add Folder")
         self.btn_add_folder.setObjectName("btn-primary")
         self.btn_add_files = QPushButton("+ Add Files")
+        self.btn_clear = QPushButton("✕ Clear")
+        self.btn_clear.setObjectName("btn-danger")
         h.addWidget(self.btn_add_folder)
         h.addWidget(self.btn_add_files)
+        h.addWidget(self.btn_clear)
         h.addStretch()
         self.btn_translate = QPushButton("▶ Translate All")
         self.btn_translate.setObjectName("btn-success")
@@ -79,6 +82,7 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         self.btn_add_folder.clicked.connect(self._on_add_folder)
         self.btn_add_files.clicked.connect(self._on_add_files)
+        self.btn_clear.clicked.connect(self._on_clear)
         self.btn_translate.clicked.connect(self._on_translate_all)
         self.btn_settings.clicked.connect(self._on_settings)
         self.btn_history.clicked.connect(self._on_history)
@@ -92,6 +96,14 @@ class MainWindow(QMainWindow):
 
     def dropEvent(self, event):
         self._start_scan([url.toLocalFile() for url in event.mimeData().urls()])
+
+    def _on_clear(self):
+        if self._translation_worker:
+            self._translation_worker.cancel()
+        self.file_queue.clear()
+        self.preview.clear()
+        self.progress_bar.reset()
+        self.statusBar().clearMessage()
 
     def _on_add_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -181,9 +193,11 @@ class MainWindow(QMainWindow):
         segs = self.preview.get_segments(file_id)
         reconstructed = reconstruct(segs, dict(zip(indices, translated)))
         ext = Path(file_id).suffix
-        stem = safe_filename_length(
-            sanitize(reconstructed, self.config.sanitization), ext
-        )
+        sanitized = sanitize(reconstructed, self.config.sanitization)
+        limit = self.config.max_filename_chars
+        if limit > 0 and len(sanitized) > limit:
+            sanitized = sanitized[:limit].rstrip()
+        stem = safe_filename_length(sanitized, ext)
         self.preview.set_translated(file_id, stem + ext)
         self.progress_bar.set_approved_count(len(self.preview.get_approved_renames()))
 

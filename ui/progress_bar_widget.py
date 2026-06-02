@@ -67,6 +67,14 @@ class ProgressBarWidget(QWidget):
     def set_approved_count(self, n: int):
         self._btn_apply.setText(f"✓ Apply Approved ({n})")
 
+    def reset(self):
+        self._bar.setMaximum(1)
+        self._bar.setValue(0)
+        self._count_lbl.setText("0 / 0")
+        self._eta_lbl.setText("")
+        self._summary_lbl.setText("")
+        self._btn_apply.setText("✓ Apply Approved (0)")
+
     def set_summary(self, approved: int, errors: int, conflicts: int):
         parts = [f"{approved} approved"]
         if errors:    parts.append(f"{errors} errors")

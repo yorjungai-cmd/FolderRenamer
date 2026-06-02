@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget, QGroupBox,
     QRadioButton, QLineEdit, QPushButton, QLabel, QComboBox, QCheckBox,
     QGridLayout, QListWidget, QMessageBox, QHeaderView, QTableWidget,
-    QTableWidgetItem
+    QTableWidgetItem, QSpinBox
 )
 from config import AppConfig
 from api.deepl_provider import DeepLProvider
@@ -138,6 +138,20 @@ class SettingsDialog(QDialog):
             rb.toggled.connect(self._refresh_preview)
         rr.addStretch()
         v.addLayout(rr)
+        trim_row = QHBoxLayout()
+        trim_row.addWidget(QLabel("Auto-trim filename to max chars (0 = off):"))
+        self._max_chars = QSpinBox()
+        self._max_chars.setRange(0, 255)
+        self._max_chars.setSpecialValueText("Off (0)")
+        self._max_chars.setToolTip(
+            "0 = disabled. Windows allows up to 255 chars per filename component.\n"
+            "Set to e.g. 200 for a safety margin on deeply nested paths.\n"
+            "Trimming happens after translation, before the hard 255-byte UTF-8 limit."
+        )
+        trim_row.addWidget(self._max_chars)
+        trim_row.addStretch()
+        v.addLayout(trim_row)
+
         pg = QGroupBox("Live Preview")
         pl = QVBoxLayout(pg)
         self._pt = QTableWidget(len(self._samples), 2)
@@ -187,6 +201,7 @@ class SettingsDialog(QDialog):
             cb.setChecked(getattr(san, key, False))
         rep = san.replacement_char
         (self._ru if rep == "_" else self._rd if rep == "-" else self._rn).setChecked(True)
+        self._max_chars.setValue(self.config.max_filename_chars)
         self._subdirs.setChecked(self.config.scan_subdirectories)
         for ext in self.config.file_extensions:
             self._el.addItem(ext)
@@ -202,6 +217,7 @@ class SettingsDialog(QDialog):
         for key, cb in self._sc.items():
             setattr(san, key, cb.isChecked())
         san.replacement_char = "_" if self._ru.isChecked() else "-" if self._rd.isChecked() else ""
+        self.config.max_filename_chars = self._max_chars.value()
         self.config.scan_subdirectories = self._subdirs.isChecked()
         self.config.file_extensions = [self._el.item(i).text() for i in range(self._el.count())]
         self.accept()

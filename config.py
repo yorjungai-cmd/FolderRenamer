@@ -29,6 +29,7 @@ class AppConfig:
         ".mp4", ".mkv", ".avi", ".ts", ".wmv", ".flv", ".mov", ".iso", ".m2ts"
     ])
     scan_subdirectories: bool = True
+    max_filename_chars: int = 0
     sanitization: SanitizationConfig = field(default_factory=SanitizationConfig)
 
     def save(self):
