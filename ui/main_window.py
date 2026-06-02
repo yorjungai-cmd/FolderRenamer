@@ -35,6 +35,8 @@ class MainWindow(QMainWindow):
         self.config = config
         self._scan_workers: list = []
         self._translation_worker: TranslationWorker | None = None
+        self._retry_workers: list = []
+        self._result_count: int = 0
         self._update_worker: UpdateCheckWorker | UpdateDownloadWorker | None = None
         self._update_progress: QProgressDialog | None = None
         self.setWindowTitle(f"Folder File Renamer v{APP_VERSION}")
@@ -100,6 +102,7 @@ class MainWindow(QMainWindow):
         self.progress_bar.stop_requested.connect(self._on_stop)
         self.progress_bar.apply_requested.connect(self._on_apply)
         self.progress_bar.revert_requested.connect(self._on_history)
+        self.preview.retry_requested.connect(self._on_retry_file)
 
     def _check_updates_on_startup(self):
         self._start_update_check(manual=False)
@@ -277,20 +280,26 @@ class MainWindow(QMainWindow):
             )
             return
         jobs = []
-        for fp in files:
-            stem = Path(fp).stem
-            segs = parse_filename(stem)
-            jp = collect_japanese(segs)
-            if not jp:
-                self.file_queue.set_status(fp, "no-op")
-                continue
-            self.preview.store_segments(fp, segs)
-            self.preview.add_row(fp, Path(fp).name)
-            jobs.append(TranslationJob(
-                file_id=fp,
-                japanese_segments=[t for _, t in jp],
-                segment_indices=[i for i, _ in jp],
-            ))
+        self.preview.table.setUpdatesEnabled(False)
+        self.preview.table.setSortingEnabled(False)
+        try:
+            for fp in files:
+                stem = Path(fp).stem
+                segs = parse_filename(stem)
+                jp = collect_japanese(segs)
+                if not jp:
+                    self.file_queue.set_status(fp, "no-op")
+                    continue
+                self.preview.store_segments(fp, segs)
+                self.preview.add_row(fp, Path(fp).name)
+                jobs.append(TranslationJob(
+                    file_id=fp,
+                    japanese_segments=[t for _, t in jp],
+                    segment_indices=[i for i, _ in jp],
+                ))
+        finally:
+            self.preview.table.setUpdatesEnabled(True)
+            self.preview.table.setSortingEnabled(True)
         if not jobs:
             return
         batch_size = 50 if self.config.provider == "deepl" else 5
@@ -304,7 +313,10 @@ class MainWindow(QMainWindow):
         w.translation_error.connect(self.preview.set_error)
         w.progress_updated.connect(self.progress_bar.set_progress)
         w.eta_updated.connect(self.progress_bar.set_eta)
+        w.finished.connect(self.preview.end_bulk)
         w.finished.connect(self._on_translation_done)
+        self._result_count = 0
+        self.preview.begin_bulk()
         w.start()
         self._translation_worker = w
         self.progress_bar.set_total(len(jobs))
@@ -320,7 +332,9 @@ class MainWindow(QMainWindow):
             sanitized = sanitized[:limit].rstrip()
         stem = safe_filename_length(sanitized, ext)
         self.preview.set_translated(file_id, stem + ext)
-        self.progress_bar.set_approved_count(len(self.preview.get_approved_renames()))
+        self._result_count += 1
+        if self._result_count % 50 == 0:
+            self.progress_bar.set_approved_count(len(self.preview.get_approved_renames()))
 
     def _on_translation_done(self):
         self.btn_translate.setEnabled(True)
@@ -328,6 +342,35 @@ class MainWindow(QMainWindow):
         errors    = self.preview.count_by_status("error")
         conflicts = self.preview.count_by_status("conflict")
         self.progress_bar.set_summary(approved, errors, conflicts)
+
+    def _on_retry_file(self, fp: str):
+        provider = self._get_provider()
+        if not provider:
+            QMessageBox.warning(
+                self, "No API Configured",
+                "Configure an API key in Settings before retrying."
+            )
+            return
+        segs = self.preview.get_segments(fp)
+        if not segs:
+            segs = parse_filename(Path(fp).stem)
+            self.preview.store_segments(fp, segs)
+        jp = collect_japanese(segs)
+        if not jp:
+            return
+        self.preview.set_pending(fp)
+        job = TranslationJob(
+            file_id=fp,
+            japanese_segments=[t for _, t in jp],
+            segment_indices=[i for i, _ in jp],
+        )
+        w = TranslationWorker(provider, [job], batch_size=1, delay_ms=0)
+        w.translation_result.connect(self._on_translation_result)
+        w.translation_error.connect(self.preview.set_error)
+        w.finished.connect(lambda ww=w: self._retry_workers.remove(ww)
+                           if ww in self._retry_workers else None)
+        w.start()
+        self._retry_workers.append(w)
 
     def _on_stop(self):
         if self._translation_worker:
@@ -401,11 +444,12 @@ class MainWindow(QMainWindow):
             )
 
     def closeEvent(self, event):
-        # Cancel any in-progress workers before closing
         for w in self._scan_workers:
             w.cancel()
         if self._translation_worker:
             self._translation_worker.cancel()
+        for w in self._retry_workers:
+            w.cancel()
         event.accept()
 
     def _on_settings(self):

@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QHeaderView, QComboBox, QPushButton, QLabel
 )
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QColor
 from config import AppConfig
 
@@ -34,12 +34,15 @@ def trim_filename_for_preview(filename: str, max_filename_chars: int) -> str:
 
 class PreviewPanel(QWidget):
     S_COL, ORIG_COL, TRANS_COL, ACT_COL = 0, 1, 2, 3
+    retry_requested = pyqtSignal(str)
 
     def __init__(self, config: AppConfig, parent=None):
         super().__init__(parent)
         self.config = config
         self._segments: dict = {}
         self._row_map:  dict = {}
+        self._bulk: bool = False
+        self._bulk_dirty_folders: set = set()
         self._build_ui()
 
     def _build_ui(self):
@@ -140,7 +143,10 @@ class PreviewPanel(QWidget):
                 si.setText("✓")
                 si.setForeground(QColor("#10b981"))
                 si.setData(Qt.ItemDataRole.UserRole, "approved")
-            self._flag_conflicts(row, fp, translated_name)
+            if self._bulk:
+                self._bulk_dirty_folders.add(os.path.dirname(fp))
+            else:
+                self._flag_conflicts(row, fp, translated_name)
         finally:
             self.table.blockSignals(False)
         self._refresh_row_after_name_change(row, fp)
@@ -180,10 +186,23 @@ class PreviewPanel(QWidget):
                    if (self.table.item(row, self.S_COL) or None) is not None
                    and self.table.item(row, self.S_COL).data(Qt.ItemDataRole.UserRole) == status)
 
+    def begin_bulk(self) -> None:
+        self._bulk = True
+        self._bulk_dirty_folders.clear()
+
+    def end_bulk(self) -> None:
+        self._bulk = False
+        self._apply_filter(self._filter.currentText())
+        for folder in self._bulk_dirty_folders:
+            self._recheck_all_conflicts_in_folder(folder)
+        self._bulk_dirty_folders.clear()
+
     def clear(self):
         self.table.setRowCount(0)
         self._row_map.clear()
         self._segments.clear()
+        self._bulk = False
+        self._bulk_dirty_folders.clear()
 
     def mark_applied(self, fp: str):
         row = self._row_map.get(fp)
@@ -199,6 +218,7 @@ class PreviewPanel(QWidget):
             si = self.table.item(row, self.S_COL)
             if si:
                 si.setText("✓")
+                si.setData(Qt.ItemDataRole.UserRole, "applied")
         finally:
             self.table.blockSignals(False)
 
@@ -219,6 +239,28 @@ class PreviewPanel(QWidget):
         finally:
             self.table.blockSignals(False)
 
+    def set_pending(self, fp: str):
+        row = self._row_map.get(fp)
+        if row is None:
+            return
+        self.table.blockSignals(True)
+        try:
+            ti = self.table.item(row, self.TRANS_COL)
+            if ti:
+                ti.setText("Translating…")
+                ti.setForeground(QColor("#6366f1"))
+                ti.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                ti.setBackground(QColor("transparent"))
+            si = self.table.item(row, self.S_COL)
+            if si:
+                si.setText("⟳")
+                si.setForeground(QColor("#6366f1"))
+                si.setData(Qt.ItemDataRole.UserRole, "pending")
+                si.setBackground(QColor("transparent"))
+        finally:
+            self.table.blockSignals(False)
+        self._set_actions(row, fp, "pending")
+
     def _set_actions(self, row: int, fp: str, state: str, show_trim: bool = False):
         container = QWidget()
         hl = QHBoxLayout(container)
@@ -238,6 +280,7 @@ class PreviewPanel(QWidget):
                 hl.addWidget(bt)
         elif state == "error":
             br = self._make_action_button("↺", "preview-action-danger", "Retry translation")
+            br.clicked.connect(lambda _, f=fp: self.retry_requested.emit(f))
             hl.addWidget(br)
         self.table.setCellWidget(row, self.ACT_COL, container)
 
@@ -271,13 +314,70 @@ class PreviewPanel(QWidget):
         self._refresh_row_after_name_change(row, fp)
 
     def _trim_all(self):
+        _SKIP = {"error", "rejected", "applied", "pending"}
+        # 1. Collect new names for all trimmable rows
+        new_names: dict[str, str] = {}
         for fp, row in list(self._row_map.items()):
+            si = self.table.item(row, self.S_COL)
             ti = self.table.item(row, self.TRANS_COL)
-            if not ti or ti.text().startswith("Error:"):
+            if not si or not ti:
                 continue
-            if not self._needs_trim(ti.text()):
+            if si.data(Qt.ItemDataRole.UserRole) in _SKIP:
                 continue
-            self._trim_row(fp)
+            trimmed = trim_filename_for_preview(ti.text(), self.config.max_filename_chars)
+            if trimmed != ti.text():
+                new_names[fp] = trimmed
+        if not new_names:
+            return
+        # 2. Deduplicate: files that trim to the same name in the same folder get _2, _3 …
+        self._deduplicate_trim_names(new_names)
+        # 3. Apply all text changes in one blocked pass
+        self.table.blockSignals(True)
+        try:
+            for fp, new_name in new_names.items():
+                row = self._row_map[fp]
+                ti = self.table.item(row, self.TRANS_COL)
+                if ti:
+                    ti.setText(new_name)
+                    self._apply_length_style(ti)
+        finally:
+            self.table.blockSignals(False)
+        # 4. Recheck conflicts once per distinct folder (not once per file)
+        for folder in {os.path.dirname(fp) for fp in new_names}:
+            self._recheck_all_conflicts_in_folder(folder)
+        # 5. Refresh action widgets
+        for fp in new_names:
+            row = self._row_map[fp]
+            self._refresh_row_after_name_change(row, fp)
+
+    def _deduplicate_trim_names(self, new_names: dict) -> None:
+        from collections import defaultdict
+        groups: dict = defaultdict(list)
+        for fp, name in new_names.items():
+            groups[(os.path.dirname(fp), name)].append(fp)
+        for (folder, name), fps in groups.items():
+            if len(fps) <= 1:
+                continue
+            # Names owned by rows in this folder that are NOT being trimmed (stable)
+            fps_set = set(fps)
+            stable: set = set()
+            for other_fp, other_row in self._row_map.items():
+                if os.path.dirname(other_fp) == folder and other_fp not in fps_set:
+                    ti = self.table.item(other_row, self.TRANS_COL)
+                    if ti:
+                        stable.add(ti.text())
+            stem, ext = os.path.splitext(name)
+            in_use = set(stable)
+            in_use.add(name)  # fps[0] keeps original trimmed name
+            counter = 2
+            for fp in fps[1:]:
+                candidate = f"{stem}_{counter}{ext}"
+                while candidate in in_use:
+                    counter += 1
+                    candidate = f"{stem}_{counter}{ext}"
+                new_names[fp] = candidate
+                in_use.add(candidate)
+                counter += 1
 
     def _on_item_changed(self, item):
         if item.column() != self.TRANS_COL:
@@ -317,7 +417,8 @@ class PreviewPanel(QWidget):
         ti = self.table.item(row, self.TRANS_COL)
         show_trim = bool(ti and self._needs_trim(ti.text()))
         self._set_actions(row, fp, "done", show_trim=show_trim)
-        self._apply_filter(self._filter.currentText())
+        if not self._bulk:
+            self._apply_filter(self._filter.currentText())
 
     def _needs_trim(self, filename: str) -> bool:
         return trim_filename_for_preview(filename, self.config.max_filename_chars) != filename
@@ -335,8 +436,9 @@ class PreviewPanel(QWidget):
                 if ti:
                     ti.setBackground(QColor("transparent"))
         for fp, r in folder_rows:
+            si = self.table.item(r, self.S_COL)
             ti = self.table.item(r, self.TRANS_COL)
-            if ti and not ti.text().startswith("Error:"):
+            if ti and si and si.data(Qt.ItemDataRole.UserRole) not in ("error", "pending"):
                 self._flag_conflicts(r, fp, ti.text())
 
     def _approve_row(self, fp: str):
@@ -352,8 +454,7 @@ class PreviewPanel(QWidget):
     def _approve_all(self):
         for row in range(self.table.rowCount()):
             si = self.table.item(row, self.S_COL)
-            ti = self.table.item(row, self.TRANS_COL)
-            if si and ti and not ti.text().startswith("Error:"):
+            if si and si.data(Qt.ItemDataRole.UserRole) not in ("error", "applied"):
                 si.setText("✓")
                 si.setForeground(QColor("#10b981"))
                 si.setData(Qt.ItemDataRole.UserRole, "approved")
