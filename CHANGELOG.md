@@ -5,6 +5,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.2.6] — 2026-06-09
+
+### Fixed
+- **Windows application icon** — the packaged executable and running taskbar button now use the Folder File Renamer folder-and-arrows icon instead of a generic fallback.
+- The PyInstaller build now requires the icon resource, preventing releases from silently shipping without it.
+
+### Added
+- A deterministic multi-resolution icon generator and regression coverage for all required Windows icon sizes.
+
+---
+
 ## [0.2.5] — 2026-06-02
 
 ### Added

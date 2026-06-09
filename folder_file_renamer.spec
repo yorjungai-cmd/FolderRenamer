@@ -1,5 +1,5 @@
 # folder_file_renamer.spec
-import os
+
 block_cipher = None
 a = Analysis(
     ["main.py"],
@@ -30,5 +30,5 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,
-    icon="resources/icon.ico" if os.path.exists("resources/icon.ico") else None,
+    icon="resources/icon.ico",
 )

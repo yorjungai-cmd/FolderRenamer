@@ -1,25 +1,49 @@
-import sys, os
+import sys
+from pathlib import Path
+
+from PyQt6.QtGui import QFontDatabase, QIcon
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QFontDatabase
+
 from config import AppConfig
 from ui.main_window import MainWindow
+
+
+def resource_path(*parts: str) -> Path:
+    return Path(__file__).resolve().parent.joinpath(*parts)
+
+
+def set_application_icon(app: QApplication, icon_path: Path) -> bool:
+    if not icon_path.is_file():
+        return False
+
+    icon = QIcon(str(icon_path))
+    if icon.isNull():
+        return False
+
+    app.setWindowIcon(icon)
+    return True
+
 
 def main():
     app = QApplication(sys.argv)
     app.setApplicationName("FolderFileRenamer")
-    fonts_dir = os.path.join(os.path.dirname(__file__), "resources", "fonts")
-    if os.path.isdir(fonts_dir):
-        for fname in os.listdir(fonts_dir):
-            if fname.lower().endswith((".ttf", ".otf")):
-                QFontDatabase.addApplicationFont(os.path.join(fonts_dir, fname))
-    qss = os.path.join(os.path.dirname(__file__), "resources", "styles.qss")
-    if os.path.exists(qss):
-        with open(qss, "r", encoding="utf-8") as f:
-            app.setStyleSheet(f.read())
+    set_application_icon(app, resource_path("resources", "icon.ico"))
+
+    fonts_dir = resource_path("resources", "fonts")
+    if fonts_dir.is_dir():
+        for font_path in fonts_dir.iterdir():
+            if font_path.suffix.lower() in (".ttf", ".otf"):
+                QFontDatabase.addApplicationFont(str(font_path))
+
+    qss = resource_path("resources", "styles.qss")
+    if qss.is_file():
+        app.setStyleSheet(qss.read_text(encoding="utf-8"))
+
     config = AppConfig.load()
     window = MainWindow(config)
     window.show()
     sys.exit(app.exec())
+
 
 if __name__ == "__main__":
     main()
